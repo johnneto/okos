@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4338ca"/>
+      <stop offset="100%" stop-color="#7c3aed"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="white" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="32" height="32" rx="7" fill="url(#bg)"/>
+  <!-- Subtle top shine -->
+  <rect width="32" height="16" rx="7" fill="url(#shine)"/>
+
+  <!-- 4 kanban column bars, bottom-anchored at y=26 -->
+  <!-- Backlog -->
+  <rect x="4"    y="10" width="4.5" height="16" rx="1.5" fill="white" fill-opacity="0.90"/>
+  <!-- To-Do -->
+  <rect x="10.5" y="14" width="4.5" height="12" rx="1.5" fill="white" fill-opacity="0.65"/>
+  <!-- Validation -->
+  <rect x="17"   y="8"  width="4.5" height="18" rx="1.5" fill="white" fill-opacity="0.80"/>
+  <!-- Done -->
+  <rect x="23.5" y="18" width="4.5" height="8"  rx="1.5" fill="white" fill-opacity="0.40"/>
+</svg>
