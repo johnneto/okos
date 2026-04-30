@@ -1,9 +1,29 @@
 import { NextRequest } from 'next/server';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { findTicket, moveTicket, COLUMNS } from '@/lib/tickets';
 import { syncTicket } from '@/lib/sheets';
+
+function resolveClaude(): string {
+  if (process.env.CLAUDE_BINARY) return process.env.CLAUDE_BINARY;
+  try {
+    return execSync('which claude', { env: process.env, timeout: 3000 }).toString().trim();
+  } catch {
+    // not on PATH — try common locations
+  }
+  const candidates = [
+    '/usr/local/bin/claude',
+    '/opt/homebrew/bin/claude',
+    `${process.env.HOME}/.npm-global/bin/claude`,
+    `${process.env.HOME}/.npm/bin/claude`,
+    `${process.env.HOME}/.local/bin/claude`,
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return 'claude';
+}
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,69 +33,19 @@ function enc(obj: object): string {
 }
 
 function buildExecutionPrompt(ticketId: string, ticketRelPath: string): string {
-  const swiftGuidelines = [
-    '# Swift Development Guidelines',
-    '',
-    '## Role',
-    'You are a Senior iOS Engineer specializing in SwiftUI, SwiftData, and related frameworks.',
-    '',
-    '## Core Requirements',
-    '- Target iOS 26.0 or later (compatible with iOS 18.0+)',
-    '- Swift 6.2 or later with modern Swift concurrency',
-    '- Use async/await APIs over closure-based variants',
-    '- SwiftUI backed by @Observable classes for shared data',
-    '- No third-party frameworks without explicit approval',
-    '- Avoid UIKit unless specifically requested',
-    '',
-    '## Swift Concurrency & Data',
-    '- @Observable classes must be marked @MainActor',
-    '- Use @State for ownership, @Bindable/@Environment for passing data',
-    '- Never use ObservableObject, @Published, @StateObject, @ObservedObject, @EnvironmentObject',
-    '- Assume strict Swift concurrency rules are being applied',
-    '- Avoid force unwraps and force try unless unrecoverable',
-    '',
-    '## Modern APIs (Never use legacy patterns)',
-    '- Use Swift-native string methods: replacing() instead of replacingOccurrences()',
-    '- Modern Foundation: URL.documentsDirectory, appending(path:)',
-    '- FormatStyle API for formatting: formatted(date:time:), formatted(.number), Date(strategy: .iso8601)',
-    '- Never use DateFormatter, NumberFormatter, MeasurementFormatter',
-    '- Use localizedStandardContains() for user-input filtering',
-    '- Use Task.sleep(for:) instead of Task.sleep(nanoseconds:)',
-    '',
-    '## SwiftUI Best Practices',
-    '- foregroundStyle() instead of foregroundColor()',
-    '- clipShape(.rect(cornerRadius:)) instead of cornerRadius()',
-    '- Tab API instead of tabItem()',
-    '- NavigationStack with navigationDestination(for:) instead of NavigationView',
-    '- Use Button for taps; onTapGesture() only if you need location/count metadata',
-    '- Use containerRelativeFrame() or visualEffect() instead of GeometryReader',
-    '- Prefer ImageRenderer over UIGraphicsImageRenderer',
-    '- Place view logic in view models for testability',
-    '- Avoid AnyView unless absolutely required',
-    '',
-    '## Skills Available',
-    '- SwiftData: Use for data persistence, predicates, CloudKit considerations',
-    '- SwiftTesting: Use for unit/integration tests (not UI tests)',
-    '- SwiftUI: Use for view reviews and modern component patterns',
-    '',
-  ].join('\n');
-
-  const executionSteps = [
-    '# Implementation Task',
+  return [
+    'Read the project guidelines from claude.md in the project root.',
     '',
     `Execute the implementation plan in the ticket file: ${ticketRelPath}`,
     '',
     'Instructions:',
     '1. Read the full plan from the ticket file',
     '2. Pull the latest code from the dev branch (git pull origin dev)',
-    '3. Implement all changes described in the plan',
-    '4. Apply the Swift, SwiftUI, SwiftData, and SwiftTesting guidelines above',
-    '5. Run the test suite and fix any failures',
-    '6. If all tests pass, commit the changes with a descriptive message referencing ticket ID: ' + ticketId,
-    '7. Report what was done at the end',
+    '3. Implement all changes described in the plan following the guidelines in claude.md',
+    '4. Run the test suite and fix any failures',
+    '5. If all tests pass, commit the changes with a descriptive message referencing ticket ID: ' + ticketId,
+    '6. Report what was done at the end',
   ].join('\n');
-
-  return swiftGuidelines + '\n\n' + executionSteps;
 }
 
 export async function GET(
@@ -118,7 +88,10 @@ export async function GET(
 
       send({ type: 'start', ticketId, modelId, message: `Launching ${modelId} for ${ticketId}…` });
 
-      const child = spawn('claude', ['--model', modelId, '-p', claudePrompt], {
+      const claudeBin = resolveClaude();
+      let spawnError = false;
+
+      const child = spawn(claudeBin, ['--model', modelId, '-p', claudePrompt], {
         cwd: process.env.APP_BASE_PATH
           ? path.isAbsolute(process.env.APP_BASE_PATH)
             ? process.env.APP_BASE_PATH
@@ -143,7 +116,11 @@ export async function GET(
       });
 
       child.on('error', (err) => {
-        send({ type: 'error', message: `Failed to start claude: ${err.message}` });
+        spawnError = true;
+        const hint = err.message.includes('ENOENT')
+          ? ` — set CLAUDE_BINARY in .env.local to the full path of the claude CLI`
+          : '';
+        send({ type: 'error', message: `Failed to start claude: ${err.message}${hint}` });
         controller.close();
       });
 
@@ -151,9 +128,10 @@ export async function GET(
         const fullReport = outputChunks.join('');
         send({ type: 'done', exitCode: code, report: fullReport });
 
-        // Move ticket to validation
+        // Move ticket to validation only on success
+        const success = !spawnError && code === 0;
         try {
-          if (ticket.column === 'todo') {
+          if (success && ticket.column === 'todo') {
             const moved = moveTicket(ticketId, 'todo', 'validation');
             syncTicket(moved).catch(() => {});
             send({ type: 'moved', to: 'validation' });
@@ -162,7 +140,12 @@ export async function GET(
           send({ type: 'warning', message: `Could not move ticket: ${moveErr}` });
         }
 
-        // Trigger Gemini validation in the background
+        if (!success && !spawnError) {
+          send({ type: 'warning', message: `Claude exited with code ${code} — ticket not moved` });
+        }
+
+        // Trigger Gemini validation in the background (only on success)
+        if (!success) { controller.close(); return; }
         try {
           const origin = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3001';
           fetch(`${origin}/api/tickets/validate/${ticketId}`, {
