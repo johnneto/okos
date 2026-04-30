@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Ticket Orchestrator',
+  title: 'Okos - Ticket Orchestrator',
   description: 'Local AI-powered ticket management dashboard',
   icons: {
     icon: [

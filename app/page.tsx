@@ -126,16 +126,16 @@ export default function HomePage() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/logo.svg"
-              alt="Ticket Orchestrator logo"
+              alt="Okos logo"
               width={34}
               height={34}
               className="rounded-xl shadow-lg shadow-indigo-900/40"
             />
             <div>
-              <h1 className="text-sm font-bold text-white tracking-tight leading-tight">
-                Ticket Orchestrator
+              <h1 className="text-lg font-bold text-white tracking-tight leading-tight">
+                Okos - Smart Ticket Orchestrator
               </h1>
-              <p className="text-[10px] text-slate-500 leading-none mt-0.5">Local AI Dashboard</p>
+              <p className="text-[10px] text-slate-500 leading-none mt-0.5"> Project Manager Dashboard</p>
             </div>
           </div>
 

@@ -70,7 +70,7 @@ export default function Terminal({ ticketId, modelId, onDone, onMoved, onValidat
       // Welcome message
       const modelLabel = (modelId ?? 'claude').replace('claude-', '').slice(0, 16);
       term.writeln('\x1b[38;5;99m┌──────────────────────────────────────────┐\x1b[0m');
-      term.writeln(`\x1b[38;5;99m│  Ticket Orchestrator — ${ticketId.padEnd(12)}          │\x1b[0m`);
+      term.writeln(`\x1b[38;5;99m│  Okos — ${ticketId.padEnd(12)}                        │\x1b[0m`);
       term.writeln(`\x1b[38;5;99m│  Model: \x1b[38;5;183m${modelLabel.padEnd(34)}\x1b[38;5;99m│\x1b[0m`);
       term.writeln('\x1b[38;5;99m└──────────────────────────────────────────┘\x1b[0m');
       term.writeln('');
@@ -112,6 +112,7 @@ export default function Terminal({ ticketId, modelId, onDone, onMoved, onValidat
               );
               if (msg.exitCode !== 0) onRawOutput?.(`\n✗ Claude exited with code ${msg.exitCode}\n`);
               onDone?.(msg.exitCode, msg.report ?? '');
+              if (msg.exitCode !== 0) es.close();
               break;
 
             case 'moved':
@@ -148,7 +149,10 @@ export default function Terminal({ ticketId, modelId, onDone, onMoved, onValidat
       };
 
       es.onerror = () => {
+        if (es.readyState === EventSource.CLOSED) return;
         term.writeln('\x1b[31m✗ Connection lost\x1b[0m');
+        es.close();
+        onDone?.(null, '');
       };
     }).catch(err => {
       console.error('Failed to load xterm', err);

@@ -91,15 +91,23 @@ export async function GET(
       const claudeBin = resolveClaude();
       let spawnError = false;
 
-      const child = spawn(claudeBin, ['--model', modelId, '-p', claudePrompt], {
-        cwd: process.env.APP_BASE_PATH
-          ? path.isAbsolute(process.env.APP_BASE_PATH)
-            ? process.env.APP_BASE_PATH
-            : path.resolve(process.cwd(), process.env.APP_BASE_PATH)
-          : process.cwd(),
-        env: { ...process.env },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
+      // Strip ANTHROPIC_API_KEY so the CLI uses local OAuth auth (claude auth login)
+      const claudeEnv = { ...process.env } as Record<string, string>;
+      delete claudeEnv.ANTHROPIC_API_KEY;
+
+      const child = spawn(
+        claudeBin,
+        ['--model', modelId, '-p', claudePrompt, '--dangerously-skip-permissions'],
+        {
+          cwd: process.env.APP_BASE_PATH
+            ? path.isAbsolute(process.env.APP_BASE_PATH)
+              ? process.env.APP_BASE_PATH
+              : path.resolve(process.cwd(), process.env.APP_BASE_PATH)
+            : process.cwd(),
+          env: claudeEnv,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }
+      );
 
       const outputChunks: string[] = [];
 
@@ -145,7 +153,7 @@ export async function GET(
         }
 
         // Trigger Gemini validation in the background (only on success)
-        if (!success) { controller.close(); return; }
+        if (!success) { try { controller.close(); } catch { /* already closed */ } return; }
         try {
           const origin = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3001';
           fetch(`${origin}/api/tickets/validate/${ticketId}`, {
