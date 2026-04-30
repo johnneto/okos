@@ -12,6 +12,72 @@ function enc(obj: object): string {
   return `data: ${JSON.stringify(obj)}\n\n`;
 }
 
+function buildExecutionPrompt(ticketId: string, ticketRelPath: string): string {
+  const swiftGuidelines = [
+    '# Swift Development Guidelines',
+    '',
+    '## Role',
+    'You are a Senior iOS Engineer specializing in SwiftUI, SwiftData, and related frameworks.',
+    '',
+    '## Core Requirements',
+    '- Target iOS 26.0 or later (compatible with iOS 18.0+)',
+    '- Swift 6.2 or later with modern Swift concurrency',
+    '- Use async/await APIs over closure-based variants',
+    '- SwiftUI backed by @Observable classes for shared data',
+    '- No third-party frameworks without explicit approval',
+    '- Avoid UIKit unless specifically requested',
+    '',
+    '## Swift Concurrency & Data',
+    '- @Observable classes must be marked @MainActor',
+    '- Use @State for ownership, @Bindable/@Environment for passing data',
+    '- Never use ObservableObject, @Published, @StateObject, @ObservedObject, @EnvironmentObject',
+    '- Assume strict Swift concurrency rules are being applied',
+    '- Avoid force unwraps and force try unless unrecoverable',
+    '',
+    '## Modern APIs (Never use legacy patterns)',
+    '- Use Swift-native string methods: replacing() instead of replacingOccurrences()',
+    '- Modern Foundation: URL.documentsDirectory, appending(path:)',
+    '- FormatStyle API for formatting: formatted(date:time:), formatted(.number), Date(strategy: .iso8601)',
+    '- Never use DateFormatter, NumberFormatter, MeasurementFormatter',
+    '- Use localizedStandardContains() for user-input filtering',
+    '- Use Task.sleep(for:) instead of Task.sleep(nanoseconds:)',
+    '',
+    '## SwiftUI Best Practices',
+    '- foregroundStyle() instead of foregroundColor()',
+    '- clipShape(.rect(cornerRadius:)) instead of cornerRadius()',
+    '- Tab API instead of tabItem()',
+    '- NavigationStack with navigationDestination(for:) instead of NavigationView',
+    '- Use Button for taps; onTapGesture() only if you need location/count metadata',
+    '- Use containerRelativeFrame() or visualEffect() instead of GeometryReader',
+    '- Prefer ImageRenderer over UIGraphicsImageRenderer',
+    '- Place view logic in view models for testability',
+    '- Avoid AnyView unless absolutely required',
+    '',
+    '## Skills Available',
+    '- SwiftData: Use for data persistence, predicates, CloudKit considerations',
+    '- SwiftTesting: Use for unit/integration tests (not UI tests)',
+    '- SwiftUI: Use for view reviews and modern component patterns',
+    '',
+  ].join('\n');
+
+  const executionSteps = [
+    '# Implementation Task',
+    '',
+    `Execute the implementation plan in the ticket file: ${ticketRelPath}`,
+    '',
+    'Instructions:',
+    '1. Read the full plan from the ticket file',
+    '2. Pull the latest code from the dev branch (git pull origin dev)',
+    '3. Implement all changes described in the plan',
+    '4. Apply the Swift, SwiftUI, SwiftData, and SwiftTesting guidelines above',
+    '5. Run the test suite and fix any failures',
+    '6. If all tests pass, commit the changes with a descriptive message referencing ticket ID: ' + ticketId,
+    '7. Report what was done at the end',
+  ].join('\n');
+
+  return swiftGuidelines + '\n\n' + executionSteps;
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: { id: string } }
@@ -47,18 +113,8 @@ export async function GET(
       const colDir = COLUMNS.find(c => c.id === ticket.column)?.dir ?? '';
       const ticketRelPath = path.join(ticketsAbs, colDir, ticket.filename);
 
-      // Build the prompt
-      const claudePrompt = [
-        `Execute the implementation plan in the ticket file: ${ticketRelPath}`,
-        '',
-        'Instructions:',
-        '1. Read the full plan from the ticket file',
-        '2. Pull the latest code from the dev branch (git pull origin dev)',
-        '3. Implement all changes described in the plan',
-        '4. Run the test suite and fix any failures',
-        '5. If all tests pass, commit the changes with a descriptive message referencing ticket ID: ' + ticketId,
-        '6. Report what was done at the end',
-      ].join('\n');
+      // Build the prompt with Swift guidelines
+      const claudePrompt = buildExecutionPrompt(ticketId, ticketRelPath);
 
       send({ type: 'start', ticketId, modelId, message: `Launching ${modelId} for ${ticketId}…` });
 
