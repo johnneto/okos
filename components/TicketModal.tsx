@@ -3,7 +3,7 @@
 import { X, ArrowRight, Play, ChevronDown, Pencil, Eye, Save, Loader2, Sparkles } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import type { Ticket, ColumnId } from '@/lib/tickets';
-import { CLAUDE_MODELS, DEFAULT_MODEL, TIER_STYLES, type ClaudeModel } from '@/lib/claude-models';
+import { CLAUDE_MODELS, DEFAULT_MODEL, TIER_STYLES, EFFORT_LEVELS, DEFAULT_EFFORT, type ClaudeModel, type EffortLevel } from '@/lib/claude-models';
 
 const COLUMNS: { id: ColumnId; label: string }[] = [
   { id: 'backlog',    label: 'Backlog' },
@@ -16,7 +16,7 @@ interface Props {
   ticket: Ticket;
   onClose: () => void;
   onMove: (ticket: Ticket, to: ColumnId) => Promise<void>;
-  onExecute: (ticket: Ticket, model: ClaudeModel) => void;
+  onExecute: (ticket: Ticket, model: ClaudeModel, effort: EffortLevel) => void;
   onUpdated: () => void;  // triggers board refresh after a save
   onRethink?: (ticket: Ticket) => Promise<void>;
 }
@@ -59,6 +59,11 @@ export default function TicketModal({ ticket, onClose, onMove, onExecute, onUpda
   const [selectedModel, setSelectedModel] = useState<ClaudeModel>(DEFAULT_MODEL);
   const modelDropRef = useRef<HTMLDivElement>(null);
 
+  // ── Effort picker state ───────────────────────────────────────────────────
+  const [effortOpen, setEffortOpen] = useState(false);
+  const [selectedEffort, setSelectedEffort] = useState<EffortLevel>(DEFAULT_EFFORT);
+  const effortDropRef = useRef<HTMLDivElement>(null);
+
   // Keep edit fields in sync if ticket prop changes from outside
   useEffect(() => {
     setEditTitle(ticket.title);
@@ -82,6 +87,16 @@ export default function TicketModal({ ticket, onClose, onMove, onExecute, onUpda
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [modelOpen]);
+
+  // Close effort dropdown on outside click
+  useEffect(() => {
+    if (!effortOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (!effortDropRef.current?.contains(e.target as Node)) setEffortOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [effortOpen]);
 
   const otherColumns = COLUMNS.filter(c => c.id !== ticket.column);
 
@@ -262,60 +277,105 @@ export default function TicketModal({ ticket, onClose, onMove, onExecute, onUpda
 
               {/* Launch Claude (only for todo) */}
               {ticket.column === 'todo' && (
-                <div ref={modelDropRef} className="relative">
-                  <div className="flex items-stretch rounded-lg overflow-hidden border border-indigo-600 text-sm font-semibold">
+                <div className="flex items-center gap-2">
+                  {/* Effort picker */}
+                  <div ref={effortDropRef} className="relative">
                     <button
-                      onClick={() => { onExecute(ticket, selectedModel); onClose(); }}
-                      className="flex items-center gap-2 pl-3 pr-3 py-2 text-white bg-indigo-600 hover:bg-indigo-500 transition-colors"
-                    >
-                      <Play size={14} />
-                      Launch Claude
-                    </button>
-                    <div className="w-px bg-indigo-500" />
-                    <button
-                      onClick={() => setModelOpen(o => !o)}
-                      className={`flex items-center gap-1.5 px-2.5 py-2 transition-colors ${
-                        modelOpen
-                          ? 'bg-indigo-500 text-white'
-                          : 'bg-indigo-600 hover:bg-indigo-500 text-indigo-200'
+                      onClick={() => setEffortOpen(o => !o)}
+                      className={`flex items-center gap-1.5 text-xs px-2.5 py-2 rounded-lg border transition-colors ${
+                        effortOpen
+                          ? 'bg-slate-700 border-slate-500 text-white'
+                          : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700'
                       }`}
-                      title="Select Claude model"
+                      title="Select effort level"
                     >
-                      <span className="text-xs">{selectedModel.label.replace('Claude ', '')}</span>
-                      <ChevronDown size={13} className={`transition-transform ${modelOpen ? 'rotate-180' : ''}`} />
+                      <span>{selectedEffort.label}</span>
+                      <ChevronDown size={12} className={`transition-transform ${effortOpen ? 'rotate-180' : ''}`} />
                     </button>
+                    {effortOpen && (
+                      <div className="absolute left-0 bottom-full mb-2 w-64 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl shadow-black/60 z-50 overflow-hidden">
+                        <div className="px-3 py-2 border-b border-slate-800">
+                          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Effort level</p>
+                        </div>
+                        {EFFORT_LEVELS.map(level => (
+                          <button
+                            key={level.value}
+                            onClick={() => { setSelectedEffort(level); setEffortOpen(false); }}
+                            className={`w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-slate-800 transition-colors ${
+                              selectedEffort.value === level.value ? 'bg-slate-800/80' : ''
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <p className={`text-sm font-semibold ${selectedEffort.value === level.value ? 'text-white' : 'text-slate-200'}`}>
+                                {level.label}
+                                {selectedEffort.value === level.value && (
+                                  <span className="ml-2 text-[10px] text-indigo-400 font-normal">selected</span>
+                                )}
+                              </p>
+                              <p className="text-xs text-slate-500 mt-0.5">{level.description}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
-                  {modelOpen && (
-                    <div className="absolute left-0 bottom-full mb-2 w-80 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl shadow-black/60 z-50 overflow-hidden">
-                      <div className="px-3 py-2 border-b border-slate-800">
-                        <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Select Claude model</p>
-                      </div>
-                      {CLAUDE_MODELS.map(model => (
-                        <button
-                          key={model.id}
-                          onClick={() => { setSelectedModel(model); setModelOpen(false); }}
-                          className={`w-full flex items-start gap-3 px-3 py-3 text-left hover:bg-slate-800 transition-colors ${
-                            selectedModel.id === model.id ? 'bg-slate-800/80' : ''
-                          }`}
-                        >
-                          <span className={`mt-0.5 shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded border ${TIER_STYLES[model.tier]}`}>
-                            {model.tier.toUpperCase()}
-                          </span>
-                          <div className="min-w-0">
-                            <p className={`text-sm font-semibold ${selectedModel.id === model.id ? 'text-white' : 'text-slate-200'}`}>
-                              {model.label}
-                              {selectedModel.id === model.id && (
-                                <span className="ml-2 text-[10px] text-indigo-400 font-normal">selected</span>
-                              )}
-                            </p>
-                            <p className="text-xs text-slate-500 mt-0.5">{model.description}</p>
-                            <p className="text-[10px] text-slate-600 mt-0.5 font-mono">{model.id}</p>
-                          </div>
-                        </button>
-                      ))}
+                  {/* Model + Launch button */}
+                  <div ref={modelDropRef} className="relative">
+                    <div className="flex items-stretch rounded-lg overflow-hidden border border-indigo-600 text-sm font-semibold">
+                      <button
+                        onClick={() => { onExecute(ticket, selectedModel, selectedEffort); onClose(); }}
+                        className="flex items-center gap-2 pl-3 pr-3 py-2 text-white bg-indigo-600 hover:bg-indigo-500 transition-colors"
+                      >
+                        <Play size={14} />
+                        Launch Claude
+                      </button>
+                      <div className="w-px bg-indigo-500" />
+                      <button
+                        onClick={() => setModelOpen(o => !o)}
+                        className={`flex items-center gap-1.5 px-2.5 py-2 transition-colors ${
+                          modelOpen
+                            ? 'bg-indigo-500 text-white'
+                            : 'bg-indigo-600 hover:bg-indigo-500 text-indigo-200'
+                        }`}
+                        title="Select Claude model"
+                      >
+                        <span className="text-xs">{selectedModel.label.replace('Claude ', '')}</span>
+                        <ChevronDown size={13} className={`transition-transform ${modelOpen ? 'rotate-180' : ''}`} />
+                      </button>
                     </div>
-                  )}
+
+                    {modelOpen && (
+                      <div className="absolute left-0 bottom-full mb-2 w-80 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl shadow-black/60 z-50 overflow-hidden">
+                        <div className="px-3 py-2 border-b border-slate-800">
+                          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Select Claude model</p>
+                        </div>
+                        {CLAUDE_MODELS.map(model => (
+                          <button
+                            key={model.id}
+                            onClick={() => { setSelectedModel(model); setModelOpen(false); }}
+                            className={`w-full flex items-start gap-3 px-3 py-3 text-left hover:bg-slate-800 transition-colors ${
+                              selectedModel.id === model.id ? 'bg-slate-800/80' : ''
+                            }`}
+                          >
+                            <span className={`mt-0.5 shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded border ${TIER_STYLES[model.tier]}`}>
+                              {model.tier.toUpperCase()}
+                            </span>
+                            <div className="min-w-0">
+                              <p className={`text-sm font-semibold ${selectedModel.id === model.id ? 'text-white' : 'text-slate-200'}`}>
+                                {model.label}
+                                {selectedModel.id === model.id && (
+                                  <span className="ml-2 text-[10px] text-indigo-400 font-normal">selected</span>
+                                )}
+                              </p>
+                              <p className="text-xs text-slate-500 mt-0.5">{model.description}</p>
+                              <p className="text-[10px] text-slate-600 mt-0.5 font-mono">{model.id}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Save, Loader2, CheckCircle2, AlertCircle,
-  FolderOpen, Sparkles, Sheet, Eye, EyeOff, ExternalLink,
+  FolderOpen, Sparkles, Sheet, Eye, EyeOff, ExternalLink, Bot,
 } from 'lucide-react';
 
 interface ConfigValues {
@@ -14,6 +14,7 @@ interface ConfigValues {
   GOOGLE_SHEETS_ID: string;
   GOOGLE_SERVICE_ACCOUNT_EMAIL: string;
   GOOGLE_PRIVATE_KEY: string;
+  CLAUDE_MAX_BUDGET_USD: string;
 }
 
 const EMPTY: ConfigValues = {
@@ -23,6 +24,7 @@ const EMPTY: ConfigValues = {
   GOOGLE_SHEETS_ID: '',
   GOOGLE_SERVICE_ACCOUNT_EMAIL: '',
   GOOGLE_PRIVATE_KEY: '',
+  CLAUDE_MAX_BUDGET_USD: '',
 };
 
 // ── Small sub-components ──────────────────────────────────────────────────────
@@ -238,6 +240,23 @@ export default function SettingsPage() {
                   . Gemini Flash 1.5 is used for both architect and validation phases.
                 </>
               }
+            />
+          </section>
+
+          {/* ── Claude Execution ──────────────────────────────────────────── */}
+          <section className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+            <SectionHeader
+              icon={<Bot size={16} />}
+              title="Claude Execution"
+              subtitle="Controls passed to the Claude CLI when executing tickets."
+            />
+            <Field
+              label="Max Budget per Run (USD)"
+              value={values.CLAUDE_MAX_BUDGET_USD}
+              onChange={set('CLAUDE_MAX_BUDGET_USD')}
+              placeholder="1.00"
+              mono
+              hint="Hard cost cap per ticket execution via --max-budget-usd. Defaults to $1.00 if unset. Set to a higher value for complex tickets."
             />
           </section>
 

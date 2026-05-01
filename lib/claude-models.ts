@@ -5,6 +5,22 @@ export interface ClaudeModel {
   tier: 'opus' | 'sonnet' | 'haiku';
 }
 
+export interface EffortLevel {
+  value: string;
+  label: string;
+  description: string;
+}
+
+export const EFFORT_LEVELS: EffortLevel[] = [
+  { value: 'low',    label: 'Low',    description: 'Minimal thinking — fast, cheap' },
+  { value: 'medium', label: 'Medium', description: 'Balanced — recommended for most tickets' },
+  { value: 'high',   label: 'High',   description: 'More reasoning — for complex tasks' },
+  { value: 'xhigh',  label: 'X-High', description: 'Deep analysis — use sparingly' },
+  { value: 'max',    label: 'Max',    description: 'Maximum effort — slowest and most expensive' },
+];
+
+export const DEFAULT_EFFORT = EFFORT_LEVELS[1]; // medium
+
 export const CLAUDE_MODELS: ClaudeModel[] = [
   {
     id: 'claude-opus-4-6',

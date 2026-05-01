@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Terminal as XTerminal } from 'xterm';
 import type { FitAddon } from 'xterm-addon-fit';
 // xterm CSS — Next.js allows CSS imports from node_modules in client components
@@ -9,17 +9,22 @@ import 'xterm/css/xterm.css';
 interface TerminalProps {
   ticketId: string;
   modelId?: string;
+  effort?: string;
+  onStart?: () => void;
   onDone?: (exitCode: number | null, report: string) => void;
   onMoved?: (to: string) => void;
   onValidation?: (summary: string, approved: boolean) => void;
   onRawOutput?: (text: string) => void;
 }
 
-export default function Terminal({ ticketId, modelId, onDone, onMoved, onValidation, onRawOutput }: TerminalProps) {
+export default function Terminal({ ticketId, modelId, effort, onStart, onDone, onMoved, onValidation, onRawOutput }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<XTerminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const esRef = useRef<EventSource | null>(null);
+  const [thinkingBlocks, setThinkingBlocks] = useState<string[]>([]);
+  const [thinkingExpanded, setThinkingExpanded] = useState(false);
+  const [hasThinking, setHasThinking] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -77,8 +82,12 @@ export default function Terminal({ ticketId, modelId, onDone, onMoved, onValidat
       term.writeln('\x1b[33mConnecting to execution stream…\x1b[0m');
 
       // Connect to SSE
-      const esUrl = modelId
-        ? `/api/tickets/execute/${ticketId}?model=${encodeURIComponent(modelId)}`
+      const params = new URLSearchParams();
+      if (modelId) params.set('model', modelId);
+      if (effort) params.set('effort', effort);
+      const qs = params.toString();
+      const esUrl = qs
+        ? `/api/tickets/execute/${ticketId}?${qs}`
         : `/api/tickets/execute/${ticketId}`;
       const es = new EventSource(esUrl);
       esRef.current = es;
@@ -90,6 +99,16 @@ export default function Terminal({ ticketId, modelId, onDone, onMoved, onValidat
           switch (msg.type) {
             case 'start':
               term.writeln(`\x1b[32m▶ ${msg.message}\x1b[0m`);
+              onStart?.();
+              break;
+
+            case 'thinking_block':
+              setHasThinking(true);
+              setThinkingBlocks(prev => [...prev, msg.data]);
+              break;
+
+            case 'thinking_complete':
+              // Thinking section is now complete
               break;
 
             case 'stdout':
@@ -170,10 +189,30 @@ export default function Terminal({ ticketId, modelId, onDone, onMoved, onValidat
   }, [ticketId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div
-      ref={containerRef}
-      className="w-full h-full min-h-[500px] bg-slate-950 rounded-lg overflow-hidden"
-      style={{ padding: '8px' }}
-    />
+    <div className="w-full flex flex-col gap-3">
+      {hasThinking && (
+        <div className="bg-slate-900 rounded-lg border border-slate-700 overflow-hidden">
+          <button
+            onClick={() => setThinkingExpanded(!thinkingExpanded)}
+            className="w-full px-4 py-3 flex items-center gap-2 bg-slate-800 hover:bg-slate-700 transition-colors text-left text-slate-200 font-mono text-sm"
+          >
+            <span className="text-slate-400">{thinkingExpanded ? '▼' : '▶'}</span>
+            <span>Thinking Process ({thinkingBlocks.length} blocks)</span>
+          </button>
+          {thinkingExpanded && (
+            <div className="px-4 py-3 max-h-[300px] overflow-y-auto bg-slate-950 border-t border-slate-700">
+              <pre className="text-slate-300 font-mono text-xs whitespace-pre-wrap break-words leading-relaxed">
+                {thinkingBlocks.join('\n\n')}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        className="w-full h-full min-h-[500px] bg-slate-950 rounded-lg overflow-hidden"
+        style={{ padding: '8px' }}
+      />
+    </div>
   );
 }

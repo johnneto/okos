@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import TicketCard from './TicketCard';
 import TicketModal from './TicketModal';
 import type { Ticket, ColumnId } from '@/lib/tickets';
-import type { ClaudeModel } from '@/lib/claude-models';
+import { DEFAULT_EFFORT, type ClaudeModel, type EffortLevel } from '@/lib/claude-models';
 
 const COLUMN_DEFS: { id: ColumnId; label: string; color: string; headerColor: string }[] = [
   {
@@ -108,8 +108,9 @@ export default function KanbanBoard({ tickets, onRefresh }: Props) {
     onRefresh();
   };
 
-  const handleExecute = (ticket: Ticket, model: ClaudeModel) => {
-    router.push(`/execute/${ticket.id}?model=${encodeURIComponent(model.id)}`);
+  const handleExecute = (ticket: Ticket, model: ClaudeModel, effort?: EffortLevel) => {
+    const effortValue = (effort ?? DEFAULT_EFFORT).value;
+    router.push(`/execute/${ticket.id}?model=${encodeURIComponent(model.id)}&effort=${encodeURIComponent(effortValue)}`);
   };
 
   const handleRethink = async (ticket: Ticket): Promise<void> => {
