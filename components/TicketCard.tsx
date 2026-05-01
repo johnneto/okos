@@ -3,13 +3,13 @@
 import { Play, Clock, CheckCircle2, AlertCircle, Loader2, ChevronDown, Sparkles } from 'lucide-react';
 import { useState, useRef, useEffect } from 'react';
 import type { Ticket, ColumnId } from '@/lib/tickets';
-import { CLAUDE_MODELS, DEFAULT_MODEL, TIER_STYLES, type ClaudeModel } from '@/lib/claude-models';
+import { CLAUDE_MODELS, DEFAULT_MODEL, TIER_STYLES, type ClaudeModel, type EffortLevel } from '@/lib/claude-models';
 
 interface Props {
   ticket: Ticket;
   onDragStart: (ticket: Ticket) => void;
   onClick: (ticket: Ticket) => void;
-  onExecute?: (ticket: Ticket, model: ClaudeModel) => void;
+  onExecute?: (ticket: Ticket, model: ClaudeModel, effort?: EffortLevel) => void;
   onRethink?: (ticket: Ticket) => Promise<void>;
 }
 

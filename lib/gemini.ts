@@ -17,9 +17,26 @@ function readTextFile(filePath: string): string {
   }
 }
 
-function buildDevelopmentGuidelinesContext(): string {
+const SKILL_PATTERNS: { dir: string; pattern: RegExp }[] = [
+  { dir: 'SwiftData skill',    pattern: /data|model|persist|store|cloudkit|swiftdata|fetch|predicate|schema|migration/i },
+  { dir: 'SwiftUI skill',      pattern: /view|ui|layout|animation|navigation|screen|sheet|component|button|list|form/i },
+  { dir: 'SwiftTesting skill', pattern: /test|testing|spec|assert|unit|integration|xctest|mock/i },
+];
+
+const ALWAYS_INCLUDE_FILES = new Set(['AGENTS.md', 'swiftlint_main_github.yml']);
+
+function buildDevelopmentGuidelinesContext(featureRequest = ''): string {
   const baseDir = path.resolve(process.cwd(), 'lib', 'development guidelines');
   if (!fs.existsSync(baseDir)) return '(development guidelines not found)';
+
+  const matchedDirs = SKILL_PATTERNS
+    .filter(s => s.pattern.test(featureRequest))
+    .map(s => s.dir);
+
+  // Fall back to all skill dirs if no keyword matched
+  const includedDirs = new Set(
+    matchedDirs.length > 0 ? matchedDirs : SKILL_PATTERNS.map(s => s.dir)
+  );
 
   const sections: string[] = [];
 
@@ -31,8 +48,12 @@ function buildDevelopmentGuidelinesContext(): string {
       const rel = relativePath ? path.join(relativePath, entry.name) : entry.name;
 
       if (entry.isDirectory()) {
+        // At the root level, skip skill dirs that didn't match
+        if (!relativePath && !includedDirs.has(entry.name)) continue;
         visit(entryPath, rel);
       } else if (entry.isFile()) {
+        // At the root level, only include always-included files
+        if (!relativePath && !ALWAYS_INCLUDE_FILES.has(entry.name)) continue;
         const content = readTextFile(entryPath);
         if (!content) continue;
         sections.push(`### ${rel}\n\n${content}`);
@@ -116,7 +137,7 @@ export async function generateTicketPlan(
 
   const projectType = getProjectType();
   const systemPrompt = buildArchitectPrompt(projectType);
-  const guidelinesContext = buildDevelopmentGuidelinesContext();
+  const guidelinesContext = buildDevelopmentGuidelinesContext(featureRequest);
 
   const prompt = `${systemPrompt}
 

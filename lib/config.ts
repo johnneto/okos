@@ -10,6 +10,7 @@ export interface AppConfig {
   GOOGLE_SHEETS_ID: string;
   GOOGLE_SERVICE_ACCOUNT_EMAIL: string;
   GOOGLE_PRIVATE_KEY: string;
+  CLAUDE_MAX_BUDGET_USD: string;
 }
 
 // Keys that should be masked when returned to the client
@@ -86,6 +87,7 @@ export function readConfig(): AppConfig {
     GOOGLE_SHEETS_ID:            get('GOOGLE_SHEETS_ID'),
     GOOGLE_SERVICE_ACCOUNT_EMAIL: get('GOOGLE_SERVICE_ACCOUNT_EMAIL'),
     GOOGLE_PRIVATE_KEY:          get('GOOGLE_PRIVATE_KEY'),
+    CLAUDE_MAX_BUDGET_USD:       get('CLAUDE_MAX_BUDGET_USD', '1.00'),
   };
 }
 

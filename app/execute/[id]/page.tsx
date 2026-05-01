@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import { ArrowLeft, CheckCircle2, XCircle, Loader2, AlertTriangle, Copy, Check } from 'lucide-react';
-import { CLAUDE_MODELS, DEFAULT_MODEL, TIER_STYLES } from '@/lib/claude-models';
+import { CLAUDE_MODELS, DEFAULT_MODEL, TIER_STYLES, EFFORT_LEVELS, DEFAULT_EFFORT } from '@/lib/claude-models';
 
 // xterm.js must be loaded client-side only
 const Terminal = dynamic(() => import('@/components/Terminal'), { ssr: false });
@@ -23,6 +23,10 @@ export default function ExecutePage({ params }: Props) {
   // Resolve model from query param, fall back to default
   const modelId = searchParams.get('model') ?? DEFAULT_MODEL.id;
   const model = CLAUDE_MODELS.find(m => m.id === modelId) ?? DEFAULT_MODEL;
+
+  // Resolve effort from query param, fall back to default
+  const effortValue = searchParams.get('effort') ?? DEFAULT_EFFORT.value;
+  const effort = EFFORT_LEVELS.find(e => e.value === effortValue) ?? DEFAULT_EFFORT;
 
   const [status, setStatus] = useState<ExecutionStatus>('connecting');
   const [exitCode, setExitCode] = useState<number | null>(null);
@@ -46,6 +50,8 @@ export default function ExecutePage({ params }: Props) {
     const m = Math.floor(s / 60);
     return m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
   };
+
+  const handleStart = () => setStatus('running');
 
   const handleDone = (code: number | null, _report: string) => {
     setExitCode(code);
@@ -103,6 +109,10 @@ export default function ExecutePage({ params }: Props) {
             {/* Model badge */}
             <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${TIER_STYLES[model.tier]}`}>
               {model.label}
+            </span>
+            {/* Effort badge */}
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded border text-slate-300 bg-slate-800/40 border-slate-600">
+              effort: {effort.value}
             </span>
           </div>
 
@@ -169,6 +179,8 @@ export default function ExecutePage({ params }: Props) {
           <Terminal
             ticketId={ticketId}
             modelId={model.id}
+            effort={effort.value}
+            onStart={handleStart}
             onDone={handleDone}
             onMoved={handleMoved}
             onValidation={handleValidation}
