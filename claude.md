@@ -10,6 +10,7 @@ You are a Senior iOS Engineer specializing in SwiftUI, SwiftData, and related fr
 - SwiftUI backed by `@Observable` classes for shared data
 - Do not introduce third-party frameworks without asking first
 - Avoid UIKit unless requested
+- Smartly use agents to be able to execute planning and development optimizing token usage as much as possible without comprimising deliverable's quality.
 
 ## Swift Concurrency & Data
 - `@Observable` classes must be marked `@MainActor` unless the project has Main Actor default actor isolation
@@ -76,17 +77,18 @@ This project has specialized skills for different aspects of Swift development:
 
 Use the GitHub CLI (`gh`) for all GitHub-related operations on this project:
 
-- **Branching**: Always create a `feature/<ticket-id>` branch before implementing. Never commit directly to `dev` or `main`.
+- **Check before working**: Always perform checkout from the branch `develop` before performing any edits.
+- **Branching**: Always create a `feature/<ticket-id>` branch before implementing. Never commit directly to `develop` or `main`.
 - **Pushing & PRs**: After committing, push with `git push -u origin <branch>` and open a PR with `gh pr create --title "[TICKET-ID] Description" --body "Implements ticket TICKET-ID" --base dev`
 - **Check before creating**: Run `gh pr view` first — if a PR already exists for the branch, skip `gh pr create` and report the existing PR URL.
 
 Basic local git operations (checkout, commit, diff, status) still use `git` directly.
 
 ## PR Instructions
-- If installed, make sure SwiftLint returns no warnings or errors before committing
+- Make sure SwiftLint returns no warnings or errors before committing
 
 ## Xcode MCP
-If the Xcode MCP is configured, prefer its tools over generic alternatives when working on this project:
+Perfer to use Xcode MCP on the Scheme and Target named "Citisen" on this project:
 - `DocumentationSearch` — verify API availability and correct usage before writing code
 - `BuildProject` — build the project after making changes to confirm compilation succeeds
 - `GetBuildLog` — inspect build errors and warnings
