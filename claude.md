@@ -79,7 +79,7 @@ Use the GitHub CLI (`gh`) for all GitHub-related operations on this project:
 
 - **Check before working**: Always perform checkout from the branch `develop` before performing any edits.
 - **Branching**: Always create a `feature/<ticket-id>` branch before implementing. Never commit directly to `develop` or `main`.
-- **Pushing & PRs**: After committing, push with `git push -u origin <branch>` and open a PR with `gh pr create --title "[TICKET-ID] Description" --body "Implements ticket TICKET-ID" --base dev`
+- **Pushing & PRs**: After committing, push with `git push -u origin <branch>` and open a PR with `gh pr create --title "[TICKET-ID] Description" --body "Implements ticket TICKET-ID" --base develop`
 - **Check before creating**: Run `gh pr view` first — if a PR already exists for the branch, skip `gh pr create` and report the existing PR URL.
 
 Basic local git operations (checkout, commit, diff, status) still use `git` directly.
