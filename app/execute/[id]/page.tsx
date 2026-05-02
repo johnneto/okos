@@ -3,10 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { ArrowLeft, CheckCircle2, XCircle, Loader2, AlertTriangle, Copy, Check } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, Loader2, AlertTriangle, Copy, Check, Square } from 'lucide-react';
 import { CLAUDE_MODELS, DEFAULT_MODEL, TIER_STYLES, EFFORT_LEVELS, DEFAULT_EFFORT } from '@/lib/claude-models';
 
-// xterm.js must be loaded client-side only
+// EventSource is browser-only — disable SSR
 const Terminal = dynamic(() => import('@/components/Terminal'), { ssr: false });
 
 type ExecutionStatus = 'connecting' | 'running' | 'done' | 'error';
@@ -82,6 +82,14 @@ export default function ExecutePage({ params }: Props) {
     }
   };
 
+  const handleStop = async () => {
+    try {
+      await fetch(`/api/tickets/execute/${ticketId}`, { method: 'DELETE' });
+    } catch { /* ignore */ }
+    setStatus('error');
+    setExitCode(-1);
+  };
+
   const handleValidation = (summary: string, isApproved: boolean) => {
     setValidationSummary(summary);
     setApproved(isApproved);
@@ -119,10 +127,19 @@ export default function ExecutePage({ params }: Props) {
           {/* Status indicator */}
           <div className="flex items-center gap-3">
             {(status === 'connecting' || status === 'running') && (
-              <span className="flex items-center gap-2 text-xs text-amber-400">
-                <Loader2 size={13} className="animate-spin" />
-                {status === 'connecting' ? 'Connecting…' : `Running — ${formatElapsed(elapsedMs)}`}
-              </span>
+              <>
+                <span className="flex items-center gap-2 text-xs text-amber-400">
+                  <Loader2 size={13} className="animate-spin" />
+                  {status === 'connecting' ? 'Connecting…' : `Running — ${formatElapsed(elapsedMs)}`}
+                </span>
+                <button
+                  onClick={handleStop}
+                  className="flex items-center gap-1.5 text-xs bg-red-950 hover:bg-red-900 border border-red-800 text-red-300 hover:text-red-100 px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  <Square size={11} fill="currentColor" />
+                  Stop
+                </button>
+              </>
             )}
             {status === 'done' && exitCode === 0 && (
               <span className="flex items-center gap-2 text-xs text-emerald-400">

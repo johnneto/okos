@@ -26,74 +26,79 @@ function resolveClaude(): string {
   return 'claude';
 }
 
+function resolveGh(): string {
+  if (process.env.GH_BINARY) return process.env.GH_BINARY;
+  try {
+    return execSync('which gh', { env: process.env, timeout: 3000 }).toString().trim();
+  } catch { /* fall through */ }
+  const candidates = [
+    '/usr/local/bin/gh',
+    '/opt/homebrew/bin/gh',
+    `${process.env.HOME}/.local/bin/gh`,
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return 'gh';
+}
+
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+// Track running processes by ticketId so they can be stopped
+const runningProcesses = new Map<string, ReturnType<typeof spawn>>();
 
 function enc(obj: object): string {
   return `data: ${JSON.stringify(obj)}\n\n`;
 }
 
-function buildExecutionPrompt(ticketId: string, ticketRelPath: string): string {
+function buildExecutionPrompt(ticketId: string, ticketRelPath: string, ghBin: string): string {
+  const branch = `feature/${ticketId.toLowerCase()}`;
   return [
     `Execute the implementation plan in the ticket file: ${ticketRelPath}`,
     '',
     'Instructions:',
     '1. Read the full plan from the ticket file',
     '2. Pull the latest code from the dev branch (git pull origin dev)',
-    '3. Implement all changes described in the plan following the project guidelines you have been given',
-    '4. Run the test suite and fix any failures',
-    '5. If all tests pass, commit the changes with a descriptive message referencing ticket ID: ' + ticketId,
-    '6. Report what was done at the end',
+    `3. Create and check out a new branch named: ${branch}`,
+    `   (If it already exists, check it out: git checkout ${branch})`,
+    '4. Implement all changes described in the plan following the project guidelines you have been given',
+    '5. Run the test suite and fix any failures',
+    '6. If all tests pass, commit the changes with a descriptive message referencing ticket ID: ' + ticketId,
+    '7. Push the branch and open a PR using the GitHub CLI:',
+    `   git push -u origin ${branch}`,
+    `   ${ghBin} pr create --title "[${ticketId}] <short description of change>" --body "Implements ticket ${ticketId}" --base dev`,
+    '   (If a PR for this branch already exists, skip creation and report its URL instead)',
+    '8. Report what was done at the end, including the PR URL',
   ].join('\n');
 }
 
-function isThinkingLine(line: string): boolean {
-  const lowerLine = line.toLowerCase().trim();
-  if (!lowerLine) return false;
-
-  // Thinking pattern prefixes
-  const thinkingPrefixes = [
-    'i think', 'i should', 'i need', 'i will', 'i can',
-    'i\'m', 'i am', 'let me', 'let\'s',
-    'now i', 'first i', 'next i', 'then i',
-    'this means', 'this suggests', 'this shows',
-    'i understand', 'i realize', 'i see that',
-  ];
-
-  // Check for thinking prefixes
-  if (thinkingPrefixes.some(prefix => lowerLine.startsWith(prefix))) {
-    return true;
+function formatToolUse(name: string, input: Record<string, unknown>): string {
+  switch (name) {
+    case 'Read':
+    case 'ReadFile':
+      return `Reading: ${input.file_path ?? input.path ?? ''}`;
+    case 'Edit':
+    case 'MultiEdit':
+      return `Editing: ${input.file_path ?? input.path ?? ''}`;
+    case 'Write':
+    case 'WriteFile':
+      return `Writing: ${input.file_path ?? input.path ?? ''}`;
+    case 'Bash':
+      return `$ ${String(input.command ?? '').slice(0, 120)}`;
+    case 'Glob':
+      return `Glob: ${input.pattern ?? ''}`;
+    case 'Grep':
+      return `Grep: "${input.pattern ?? ''}" in ${input.path ?? '.'}`;
+    case 'TodoWrite':
+      return 'Updating task list';
+    case 'WebSearch':
+      return `Searching: ${input.query ?? ''}`;
+    case 'WebFetch':
+      return `Fetching: ${input.url ?? ''}`;
+    default:
+      return `${name}(${JSON.stringify(input).slice(0, 100)})`;
   }
-
-  // Check for reasoning keywords
-  const reasoningKeywords = [
-    'because', 'since', 'therefore', 'however', 'thus',
-    'based on', 'according to', 'it appears', 'it seems',
-    'in other words', 'in summary', 'in conclusion',
-    'the reason', 'the issue', 'the problem',
-  ];
-
-  if (reasoningKeywords.some(keyword => lowerLine.includes(keyword))) {
-    return true;
-  }
-
-  // Check for thinking/analysis blocks
-  if (lowerLine.includes('<thinking>') || lowerLine.includes('</thinking>') ||
-      lowerLine.includes('## thinking') || lowerLine.includes('# thinking')) {
-    return true;
-  }
-
-  // Status/progress messages
-  const progressPatterns = [
-    /^(now|next|then|first|let me)/i,
-    /^(analyzing|checking|reading|examining|running|executing|testing|building|compiling)/i,
-  ];
-
-  if (progressPatterns.some(pattern => pattern.test(lowerLine))) {
-    return true;
-  }
-
-  return false;
 }
 
 export async function GET(
@@ -141,12 +146,12 @@ export async function GET(
       const colDir = COLUMNS.find(c => c.id === ticket.column)?.dir ?? '';
       const ticketRelPath = path.join(ticketsAbs, colDir, ticket.filename);
 
-      // Build the prompt with Swift guidelines
-      const claudePrompt = buildExecutionPrompt(ticketId, ticketRelPath);
+      const claudeBin = resolveClaude();
+      const ghBin = resolveGh();
+      const claudePrompt = buildExecutionPrompt(ticketId, ticketRelPath, ghBin);
 
       send({ type: 'start', ticketId, modelId, effort, budget: maxBudget, message: `Launching ${modelId} (effort: ${effort}, budget: $${maxBudget.toFixed(2)}) for ${ticketId}…` });
 
-      const claudeBin = resolveClaude();
       let spawnError = false;
 
       // Strip ANTHROPIC_API_KEY so the CLI uses local OAuth auth (claude auth login)
@@ -158,6 +163,8 @@ export async function GET(
         '-p', claudePrompt,
         '--effort', effort,
         '--max-budget-usd', String(maxBudget),
+        '--output-format', 'stream-json',
+        '--verbose',
         '--dangerously-skip-permissions',
       ];
       if (claudeMdContent) {
@@ -165,105 +172,68 @@ export async function GET(
       }
 
       const child = spawn(claudeBin, spawnArgs, {
-          cwd: process.env.APP_BASE_PATH
-            ? path.isAbsolute(process.env.APP_BASE_PATH)
-              ? process.env.APP_BASE_PATH
-              : path.resolve(process.cwd(), process.env.APP_BASE_PATH)
-            : process.cwd(),
-          env: claudeEnv,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        }
-      );
+        cwd: process.env.APP_BASE_PATH
+          ? path.isAbsolute(process.env.APP_BASE_PATH)
+            ? process.env.APP_BASE_PATH
+            : path.resolve(process.cwd(), process.env.APP_BASE_PATH)
+          : process.cwd(),
+        env: claudeEnv,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      runningProcesses.set(ticketId, child);
 
       const outputChunks: string[] = [];
-      let thinkingBuffer: string[] = [];
+      let lineBuffer = '';
 
       child.stdout.on('data', (data: Buffer) => {
-        const text = data.toString();
-        outputChunks.push(text);
+        lineBuffer += data.toString();
+        const lines = lineBuffer.split('\n');
+        lineBuffer = lines.pop() ?? '';
 
-        // Parse thinking vs output lines
-        const lines = text.split('\n');
-        let regularOutput = '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          outputChunks.push(line + '\n');
 
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          const isLastLine = i === lines.length - 1 && text.endsWith('\n') === false;
+          try {
+            const event = JSON.parse(line) as Record<string, unknown>;
 
-          if (isThinkingLine(line)) {
-            // Flush any pending regular output first
-            if (regularOutput) {
-              send({ type: 'stdout', data: regularOutput });
-              regularOutput = '';
+            if (event.type === 'assistant' && event.message) {
+              const msg = event.message as Record<string, unknown>;
+              const content = msg.content;
+              if (Array.isArray(content)) {
+                for (const block of content) {
+                  const b = block as Record<string, unknown>;
+                  if (b.type === 'thinking' && typeof b.thinking === 'string') {
+                    send({ type: 'thinking_block', data: b.thinking });
+                  } else if (b.type === 'text' && typeof b.text === 'string') {
+                    send({ type: 'stdout', data: b.text });
+                  } else if (b.type === 'tool_use' && typeof b.name === 'string') {
+                    const toolDesc = formatToolUse(b.name, (b.input as Record<string, unknown>) ?? {});
+                    send({ type: 'tool_action', name: b.name, description: toolDesc });
+                  }
+                }
+              }
             }
-            // Add to thinking buffer
-            thinkingBuffer.push(line);
-            // Send thinking block immediately if it's a complete thought (ends with punctuation)
-            if (line.match(/[.!?]$/) || thinkingBuffer.length >= 3) {
-              send({ type: 'thinking_block', data: thinkingBuffer.join('\n') });
-              thinkingBuffer = [];
-            }
-          } else {
-            // Flush thinking buffer if transitioning to output
-            if (thinkingBuffer.length > 0) {
-              send({ type: 'thinking_block', data: thinkingBuffer.join('\n') });
-              thinkingBuffer = [];
-            }
-            // Add to regular output
-            regularOutput += (regularOutput ? '\n' : '') + (isLastLine ? line : line + '\n');
+            // 'result', 'system', 'user' events are handled implicitly via process close
+          } catch {
+            // Not JSON (e.g. verbose diagnostic lines) — send as raw stdout
+            send({ type: 'stdout', data: line + '\n' });
           }
-        }
-
-        // Flush any remaining regular output
-        if (regularOutput) {
-          send({ type: 'stdout', data: regularOutput });
         }
       });
 
       child.stderr.on('data', (data: Buffer) => {
         const text = data.toString();
         outputChunks.push(text);
-
-        // Parse thinking vs error output
-        const lines = text.split('\n');
-        let regularError = '';
-
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          const isLastLine = i === lines.length - 1 && text.endsWith('\n') === false;
-
-          if (isThinkingLine(line)) {
-            // Flush any pending error output first
-            if (regularError) {
-              send({ type: 'stderr', data: regularError });
-              regularError = '';
-            }
-            // Add to thinking buffer
-            thinkingBuffer.push(line);
-            // Send thinking block immediately if it's complete
-            if (line.match(/[.!?]$/) || thinkingBuffer.length >= 3) {
-              send({ type: 'thinking_block', data: thinkingBuffer.join('\n') });
-              thinkingBuffer = [];
-            }
-          } else {
-            // Flush thinking buffer if transitioning to error
-            if (thinkingBuffer.length > 0) {
-              send({ type: 'thinking_block', data: thinkingBuffer.join('\n') });
-              thinkingBuffer = [];
-            }
-            // Add to error output
-            regularError += (regularError ? '\n' : '') + (isLastLine ? line : line + '\n');
-          }
-        }
-
-        // Flush any remaining error output
-        if (regularError) {
-          send({ type: 'stderr', data: regularError });
+        if (text.trim()) {
+          send({ type: 'stderr', data: text });
         }
       });
 
       child.on('error', (err) => {
         spawnError = true;
+        runningProcesses.delete(ticketId);
         const hint = err.message.includes('ENOENT')
           ? ` — set CLAUDE_BINARY in .env.local to the full path of the claude CLI`
           : '';
@@ -272,12 +242,7 @@ export async function GET(
       });
 
       child.on('close', async (code) => {
-        // Flush any remaining thinking
-        if (thinkingBuffer.length > 0) {
-          send({ type: 'thinking_block', data: thinkingBuffer.join('\n') });
-          thinkingBuffer = [];
-        }
-        // Signal end of thinking section
+        runningProcesses.delete(ticketId);
         send({ type: 'thinking_complete' });
 
         const fullReport = outputChunks.join('');
@@ -330,4 +295,22 @@ export async function GET(
       'X-Accel-Buffering': 'no',
     },
   });
+}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const ticketId = params.id;
+  const proc = runningProcesses.get(ticketId);
+  if (!proc) {
+    return Response.json({ error: 'No running process for this ticket' }, { status: 404 });
+  }
+  proc.kill('SIGTERM');
+  // Force-kill after 3 s if it doesn't exit cleanly
+  setTimeout(() => {
+    try { proc.kill('SIGKILL'); } catch { /* already dead */ }
+  }, 3000);
+  runningProcesses.delete(ticketId);
+  return Response.json({ ok: true });
 }

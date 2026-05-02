@@ -4,6 +4,23 @@ import { findTicket, appendToTicket, moveTicket } from '@/lib/tickets';
 import { syncTicket } from '@/lib/sheets';
 import { execSync } from 'child_process';
 import path from 'path';
+import fs from 'fs';
+
+function resolveGh(): string {
+  if (process.env.GH_BINARY) return process.env.GH_BINARY;
+  try {
+    return execSync('which gh', { env: process.env, timeout: 3000 }).toString().trim();
+  } catch { /* fall through */ }
+  const candidates = [
+    '/usr/local/bin/gh',
+    '/opt/homebrew/bin/gh',
+    `${process.env.HOME}/.local/bin/gh`,
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return 'gh';
+}
 
 export const runtime = 'nodejs';
 
@@ -26,14 +43,25 @@ export async function POST(
       ? appBase
       : path.resolve(process.cwd(), appBase);
 
+    const ghBin = resolveGh();
     let gitDiff = '';
+
+    // Strategy 1: diff from the open PR Claude created via gh pr create
     try {
-      gitDiff = execSync('git diff HEAD~1', { cwd: appPath, encoding: 'utf-8', timeout: 15_000 });
+      gitDiff = execSync(`${ghBin} pr diff --patch`, {
+        cwd: appPath, encoding: 'utf-8', timeout: 15_000,
+      });
     } catch {
+      // Strategy 2: Claude committed directly to branch
       try {
-        gitDiff = execSync('git diff', { cwd: appPath, encoding: 'utf-8', timeout: 15_000 });
+        gitDiff = execSync('git diff HEAD~1', { cwd: appPath, encoding: 'utf-8', timeout: 15_000 });
       } catch {
-        gitDiff = '(git diff not available)';
+        // Strategy 3: uncommitted working tree changes
+        try {
+          gitDiff = execSync('git diff', { cwd: appPath, encoding: 'utf-8', timeout: 15_000 });
+        } catch {
+          gitDiff = '(git diff not available)';
+        }
       }
     }
 
