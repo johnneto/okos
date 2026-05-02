@@ -5,6 +5,7 @@ import fs from 'fs';
 import { findTicket, moveTicket, COLUMNS } from '@/lib/tickets';
 import { syncTicket } from '@/lib/sheets';
 import { readConfig } from '@/lib/config';
+import { startRunLog } from '@/lib/executionLogs';
 
 function resolveClaude(): string {
   if (process.env.CLAUDE_BINARY) return process.env.CLAUDE_BINARY;
@@ -121,12 +122,17 @@ export async function GET(
 
   const stream = new ReadableStream({
     start(controller) {
+      const runLog = startRunLog(ticketId, modelId, effort);
+
       const send = (obj: object) => {
         try {
           controller.enqueue(encoder.encode(enc(obj)));
         } catch {
           // client disconnected
         }
+        // Log every event as a side effect — never injected into Claude's context
+        const { type, ...rest } = obj as Record<string, unknown>;
+        runLog.appendEvent(String(type), rest);
       };
 
       // Find the ticket
@@ -238,6 +244,7 @@ export async function GET(
           ? ` — set CLAUDE_BINARY in .env.local to the full path of the claude CLI`
           : '';
         send({ type: 'error', message: `Failed to start claude: ${err.message}${hint}` });
+        runLog.finalize(-1, null);
         controller.close();
       });
 
@@ -265,7 +272,11 @@ export async function GET(
         }
 
         // Trigger Gemini validation in the background (only on success)
-        if (!success) { try { controller.close(); } catch { /* already closed */ } return; }
+        if (!success) {
+          runLog.finalize(code, null);
+          try { controller.close(); } catch { /* already closed */ }
+          return;
+        }
         try {
           const origin = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3001';
           fetch(`${origin}/api/tickets/validate/${ticketId}`, {
@@ -275,12 +286,15 @@ export async function GET(
           }).then(async (r) => {
             const data = await r.json();
             send({ type: 'validation', summary: data.summary, approved: data.approved });
+            runLog.finalize(code, { summary: data.summary, approved: data.approved });
             controller.close();
           }).catch((e) => {
             send({ type: 'warning', message: `Validation error: ${e}` });
+            runLog.finalize(code, null);
             controller.close();
           });
         } catch {
+          runLog.finalize(code, null);
           controller.close();
         }
       });

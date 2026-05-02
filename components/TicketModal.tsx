@@ -21,22 +21,50 @@ interface Props {
   onRethink?: (ticket: Ticket) => Promise<void>;
 }
 
-/** Lightweight Markdown → HTML renderer */
+/** Lightweight Markdown → HTML renderer (placeholder technique to avoid regex ordering bugs) */
 function renderMarkdown(md: string): string {
-  return md
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  // 1. HTML-escape entire input
+  let s = md.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // 2. Extract fenced code blocks first — replace with sentinels so they're
+  //    untouched by all other transformations (including the final \n→<br />)
+  const blocks: { lang: string; code: string }[] = [];
+  s = s.replace(/```([\w]*)\n([\s\S]*?)```/g, (_m, lang: string, code: string) => {
+    const idx = blocks.length;
+    blocks.push({ lang: lang.trim(), code: code.trimEnd() });
+    return `\x00CODE_BLOCK_${idx}\x00`;
+  });
+
+  // 3. Block + inline transformations (safe — no fenced code present)
+  s = s
     .replace(/^#{4}\s(.+)$/gm, '<h4 class="text-sm font-bold text-slate-300 mt-4 mb-1">$1</h4>')
-    .replace(/^#{3}\s(.+)$/gm, '<h3 class="text-base font-bold text-slate-200 mt-5 mb-1">$1</h3>')
+    .replace(/^#{3}\s(.+)$/gm, '<h3 class="text-base font-bold text-slate-200 mt-5 mb-2">$1</h3>')
     .replace(/^#{2}\s(.+)$/gm, '<h2 class="text-lg font-bold text-slate-100 mt-6 mb-2">$1</h2>')
     .replace(/^#{1}\s(.+)$/gm, '<h1 class="text-xl font-bold text-white mt-6 mb-2">$1</h1>')
     .replace(/\*\*(.+?)\*\*/g, '<strong class="text-slate-100 font-semibold">$1</strong>')
     .replace(/`([^`]+)`/g, '<code class="bg-slate-700 text-indigo-300 text-xs px-1 py-0.5 rounded font-mono">$1</code>')
-    .replace(/```[\w]*\n([\s\S]*?)```/g, '<pre class="bg-slate-900 border border-slate-700 rounded p-3 text-xs text-slate-300 font-mono overflow-x-auto my-3 whitespace-pre">$1</pre>')
-    .replace(/^[\-\*]\s(.+)$/gm, '<li class="ml-4 list-disc text-slate-300 text-sm">$1</li>')
-    .replace(/^\d+\.\s(.+)$/gm, '<li class="ml-4 list-decimal text-slate-300 text-sm">$1</li>')
     .replace(/^-{3,}$/gm, '<hr class="border-slate-600 my-4" />')
+    .replace(/^[\-\*]\s(.+)$/gm, '<li class="list-disc ml-4 text-slate-300 text-sm">$1</li>')
+    .replace(/^\d+\.\s(.+)$/gm, '<li class="list-decimal ml-4 text-slate-300 text-sm">$1</li>')
     .replace(/\n\n/g, '</p><p class="text-slate-300 text-sm my-2">')
     .replace(/\n/g, '<br />');
+
+  // 4. Wrap consecutive <li> runs in proper list containers
+  s = s.replace(/((?:<li class="list-disc[^>]*>[\s\S]*?<\/li>(?:<br \/>)?)+)/g,
+    run => `<ul class="list-disc ml-4 my-2 space-y-1">${run.replace(/<br \/>/g, '')}</ul>`);
+  s = s.replace(/((?:<li class="list-decimal[^>]*>[\s\S]*?<\/li>(?:<br \/>)?)+)/g,
+    run => `<ol class="list-decimal ml-4 my-2 space-y-1">${run.replace(/<br \/>/g, '')}</ol>`);
+
+  // 5. Restore code blocks with language badge
+  s = s.replace(/\x00CODE_BLOCK_(\d+)\x00/g, (_m, idxStr: string) => {
+    const { lang, code } = blocks[Number(idxStr)];
+    const badge = lang
+      ? `<span class="absolute top-2 right-2 text-[10px] font-mono text-slate-500 bg-slate-800 border border-slate-700 px-1.5 py-0.5 rounded select-none">${lang}</span>`
+      : '';
+    return `<div class="relative my-3">${badge}<pre class="bg-slate-900 border border-slate-700 rounded p-3 ${lang ? 'pt-7' : 'pt-3'} text-xs text-slate-300 font-mono overflow-x-auto whitespace-pre">${code}</pre></div>`;
+  });
+
+  return s;
 }
 
 export default function TicketModal({ ticket, onClose, onMove, onExecute, onUpdated, onRethink }: Props) {
@@ -231,7 +259,7 @@ export default function TicketModal({ ticket, onClose, onMove, onExecute, onUpda
             </div>
           ) : (
             <div
-              className="prose-sm"
+              className="space-y-1 text-slate-300 text-sm leading-relaxed"
               dangerouslySetInnerHTML={{ __html: renderMarkdown(ticket.body) }}
             />
           )}

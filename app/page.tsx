@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { RefreshCw, Sheet, AlertCircle, CheckCircle2, Loader2, Settings } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { RefreshCw, Sheet, AlertCircle, CheckCircle2, Loader2, Settings, Play, History } from 'lucide-react';
 import Link from 'next/link';
 import KanbanBoard from '@/components/KanbanBoard';
 import CreateTicketForm from '@/components/CreateTicketForm';
 import type { Ticket } from '@/lib/tickets';
+import { DEFAULT_MODEL, DEFAULT_EFFORT } from '@/lib/claude-models';
 
 const POLL_INTERVAL = 8_000; // 8 seconds
 
@@ -32,10 +34,12 @@ function StatPill({
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
+  const router = useRouter();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const [batchRemaining, setBatchRemaining] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── Data fetching ──────────────────────────────────────────────────────────
@@ -76,6 +80,21 @@ export default function HomePage() {
     return () => es.close();
   }, [fetchTickets]);
 
+  // ── Batch queue badge ─────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const sync = () => {
+      try {
+        const queue: string[] = JSON.parse(localStorage.getItem('tm_batch_queue') ?? '[]');
+        setBatchRemaining(queue.length);
+      } catch { setBatchRemaining(0); }
+    };
+    sync();
+    window.addEventListener('storage', sync);
+    const tid = setInterval(sync, 2000);
+    return () => { window.removeEventListener('storage', sync); clearInterval(tid); };
+  }, []);
+
   // ── Google Sheets sync ────────────────────────────────────────────────────
 
   const handleSheetsSync = async () => {
@@ -90,6 +109,18 @@ export default function HomePage() {
     } finally {
       setSyncing(false);
     }
+  };
+
+  // ── Batch run ─────────────────────────────────────────────────────────────
+
+  const handleRunAllTodo = () => {
+    const ids = tickets.filter(t => t.column === 'todo').map(t => t.id);
+    if (!ids.length) return;
+    localStorage.setItem('tm_batch_queue', JSON.stringify(ids));
+    setBatchRemaining(ids.length);
+    router.push(
+      `/execute/${ids[0]}?model=${encodeURIComponent(DEFAULT_MODEL.id)}&effort=${encodeURIComponent(DEFAULT_EFFORT.value)}&batch=true`
+    );
   };
 
   // ── Toast ─────────────────────────────────────────────────────────────────
@@ -154,6 +185,13 @@ export default function HomePage() {
 
           {/* Actions */}
           <div className="flex items-center gap-2">
+            {batchRemaining > 0 && (
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-300 bg-amber-950/40 border border-amber-800/60 px-3 py-1.5 rounded-lg">
+                <Loader2 size={12} className="animate-spin" />
+                Batch: {batchRemaining} remaining
+              </div>
+            )}
+
             <button
               onClick={fetchTickets}
               className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-slate-700/50 hover:border-slate-600 px-3 py-1.5 rounded-lg transition-all duration-150"
@@ -161,6 +199,19 @@ export default function HomePage() {
             >
               <RefreshCw size={12} />
               <span className="hidden sm:inline">Refresh</span>
+            </button>
+
+            <button
+              onClick={handleRunAllTodo}
+              disabled={stats.todo === 0}
+              className="flex items-center gap-1.5 text-xs text-indigo-300 hover:text-white bg-indigo-900/40 hover:bg-indigo-700 border border-indigo-700/50 hover:border-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed px-3 py-1.5 rounded-lg transition-all duration-150"
+              title={stats.todo === 0 ? 'No to-do tickets' : `Run all ${stats.todo} to-do tickets sequentially`}
+            >
+              <Play size={12} />
+              <span className="hidden sm:inline">Run all to-do</span>
+              {stats.todo > 0 && (
+                <span className="text-[10px] font-mono text-indigo-400">{stats.todo}</span>
+              )}
             </button>
 
             <button
@@ -174,6 +225,15 @@ export default function HomePage() {
             </button>
 
             <CreateTicketForm onCreated={fetchTickets} />
+
+            <Link
+              href="/runs"
+              className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 border border-slate-700/50 hover:border-slate-600 px-3 py-1.5 rounded-lg transition-all duration-150"
+              title="Execution run history"
+            >
+              <History size={12} />
+              <span className="hidden sm:inline">Runs</span>
+            </Link>
 
             <Link
               href="/settings"

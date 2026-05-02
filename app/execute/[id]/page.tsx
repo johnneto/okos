@@ -28,6 +28,8 @@ export default function ExecutePage({ params }: Props) {
   const effortValue = searchParams.get('effort') ?? DEFAULT_EFFORT.value;
   const effort = EFFORT_LEVELS.find(e => e.value === effortValue) ?? DEFAULT_EFFORT;
 
+  const isBatch = searchParams.get('batch') === 'true';
+
   const [status, setStatus] = useState<ExecutionStatus>('connecting');
   const [exitCode, setExitCode] = useState<number | null>(null);
   const [movedTo, setMovedTo] = useState<string | null>(null);
@@ -56,6 +58,29 @@ export default function ExecutePage({ params }: Props) {
   const handleDone = (code: number | null, _report: string) => {
     setExitCode(code);
     setStatus(code === 0 ? 'done' : 'error');
+
+    if (isBatch) {
+      if (code === 0) {
+        try {
+          const queue: string[] = JSON.parse(localStorage.getItem('tm_batch_queue') ?? '[]');
+          const remaining = queue.filter(id => id !== ticketId);
+          if (remaining.length === 0) {
+            localStorage.removeItem('tm_batch_queue');
+            setTimeout(() => router.push('/'), 1500);
+          } else {
+            localStorage.setItem('tm_batch_queue', JSON.stringify(remaining));
+            setTimeout(() => router.push(
+              `/execute/${remaining[0]}?model=${encodeURIComponent(modelId)}&effort=${encodeURIComponent(effortValue)}&batch=true`
+            ), 1500);
+          }
+        } catch {
+          localStorage.removeItem('tm_batch_queue');
+          setTimeout(() => router.push('/'), 1500);
+        }
+      } else {
+        localStorage.removeItem('tm_batch_queue');
+      }
+    }
   };
 
   const handleMoved = (to: string) => setMovedTo(to);
@@ -86,6 +111,7 @@ export default function ExecutePage({ params }: Props) {
     try {
       await fetch(`/api/tickets/execute/${ticketId}`, { method: 'DELETE' });
     } catch { /* ignore */ }
+    if (isBatch) localStorage.removeItem('tm_batch_queue');
     setStatus('error');
     setExitCode(-1);
   };
@@ -122,6 +148,11 @@ export default function ExecutePage({ params }: Props) {
             <span className="text-[10px] font-bold px-2 py-0.5 rounded border text-slate-300 bg-slate-800/40 border-slate-600">
               effort: {effort.value}
             </span>
+            {isBatch && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded border text-amber-300 bg-amber-900/30 border-amber-700">
+                batch
+              </span>
+            )}
           </div>
 
           {/* Status indicator */}
