@@ -79,6 +79,23 @@ function getProjectType(): string {
   }
 }
 
+// ── Thinking content extraction ───────────────────────────────────────────────
+
+function extractThinking(result: Awaited<ReturnType<ReturnType<GoogleGenerativeAI['getGenerativeModel']>['generateContent']>>): string {
+  try {
+    const parts = result.response.candidates?.[0]?.content?.parts ?? [];
+    return parts
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((p: any) => p.thought === true)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((p: any) => p.text ?? '')
+      .join('\n')
+      .trim();
+  } catch {
+    return '';
+  }
+}
+
 // ── Architect Phase ───────────────────────────────────────────────────────────
 
 function buildArchitectPrompt(projectType: string): string {
@@ -105,6 +122,13 @@ This is a **${projectType}** project. Follow the conventions and tooling appropr
 You will be given a feature request and the full source code of the project.
 Produce a detailed, self-contained implementation plan in Markdown format.
 ${languageGuidance}
+## Output format
+Start your response with exactly this line (replace the placeholder with a concise, imperative title of max 80 characters — like a git commit message):
+
+**Title:** <concise imperative title>
+
+Then continue with the numbered sections below.
+
 ## Required plan sections
 1. **Summary** — one-paragraph description of what this feature does and why
 2. **Files to create** — list each new file with its path and a one-line purpose
@@ -117,22 +141,40 @@ ${languageGuidance}
 Output ONLY valid Markdown. Do not wrap the entire response in a code fence.`;
 }
 
+export interface GeminiPlanResult {
+  title: string;
+  plan: string;
+  thinking: string;
+}
+
 /**
  * Call Gemini Flash to turn a feature request into a full implementation plan.
  * @param featureRequest - The user's natural-language feature description
  * @param appContext     - The current project source (from readAppContext())
+ * @param useThinking    - Whether to enable Gemini 2.5 Flash thinking mode
  */
 export async function generateTicketPlan(
   featureRequest: string,
-  appContext: string
-): Promise<string> {
+  appContext: string,
+  useThinking = false,
+): Promise<GeminiPlanResult> {
   const genAI = getClient();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const generationConfig: any = useThinking
+    ? {
+        temperature: 0.3,
+        maxOutputTokens: 16384,
+        thinkingConfig: { thinkingBudget: 10000, includeThoughts: true },
+      }
+    : {
+        temperature: 0.3,
+        maxOutputTokens: 8192,
+      };
+
   const model = genAI.getGenerativeModel({
     model: 'gemini-2.5-flash',
-    generationConfig: {
-      temperature: 0.3,     // lower = more deterministic plans
-      maxOutputTokens: 8192,
-    },
+    generationConfig,
   });
 
   const projectType = getProjectType();
@@ -163,7 +205,23 @@ ${featureRequest}
   const result = await model.generateContent(prompt);
   const text = result.response.text();
   if (!text) throw new Error('Gemini returned an empty response');
-  return text.trim();
+
+  const raw = text.trim();
+
+  // Extract the **Title:** line Gemini was instructed to output first
+  const titleMatch = raw.match(/^\*\*Title:\*\*\s+(.+)$/m);
+  const title = titleMatch
+    ? titleMatch[1].trim().slice(0, 120)
+    : featureRequest.split('\n')[0].trim().slice(0, 120);
+
+  // Strip the title line from the plan body (and any leading blank lines after it)
+  const plan = titleMatch
+    ? raw.replace(/^\*\*Title:\*\*\s+.+\n*/, '').trimStart()
+    : raw;
+
+  const thinking = extractThinking(result);
+
+  return { title, plan, thinking };
 }
 
 // ── Validation Phase ──────────────────────────────────────────────────────────
@@ -189,6 +247,11 @@ Produce a concise **Validation Summary** in Markdown with these sections:
 Output ONLY valid Markdown starting with ## Validation Summary`;
 }
 
+export interface GeminiValidationResult {
+  summary: string;
+  thinking: string;
+}
+
 /**
  * Call Gemini Flash to validate what Claude implemented against the original plan.
  * @param ticketBody   - The original .md plan content
@@ -198,8 +261,8 @@ Output ONLY valid Markdown starting with ## Validation Summary`;
 export async function validateImplementation(
   ticketBody: string,
   gitDiff: string,
-  claudeReport: string
-): Promise<string> {
+  claudeReport: string,
+): Promise<GeminiValidationResult> {
   const genAI = getClient();
   const model = genAI.getGenerativeModel({
     model: 'gemini-2.5-flash',
@@ -233,5 +296,9 @@ ${claudeReport.slice(0, 10_000)}
   const result = await model.generateContent(prompt);
   const text = result.response.text();
   if (!text) throw new Error('Gemini returned an empty response');
-  return text.trim();
+
+  return {
+    summary: text.trim(),
+    thinking: extractThinking(result),
+  };
 }
