@@ -2,23 +2,25 @@
 
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Sparkles, Plus, Loader2, X } from 'lucide-react';
+import { Sparkles, Plus, Loader2, X, Zap, Brain } from 'lucide-react';
 
 interface Props {
   onCreated: () => void;
 }
 
 type Mode = 'ai' | 'manual';
+type GeminiMode = 'fast' | 'thinking';
 
 export default function CreateTicketForm({ onCreated }: Props) {
-  const [open, setOpen]       = useState(false);
-  const [mode, setMode]       = useState<Mode>('ai');
-  const [feature, setFeature] = useState('');
-  const [title, setTitle]     = useState('');
-  const [body, setBody]       = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
-  const [mounted, setMounted] = useState(false);
+  const [open, setOpen]             = useState(false);
+  const [mode, setMode]             = useState<Mode>('ai');
+  const [geminiMode, setGeminiMode] = useState<GeminiMode>('fast');
+  const [feature, setFeature]       = useState('');
+  const [title, setTitle]           = useState('');
+  const [body, setBody]             = useState('');
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState('');
+  const [mounted, setMounted]       = useState(false);
 
   // Ensure we only render the portal on the client
   useEffect(() => { setMounted(true); }, []);
@@ -47,7 +49,10 @@ export default function CreateTicketForm({ onCreated }: Props) {
         const res = await fetch('/api/tickets/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ featureRequest: feature }),
+          body: JSON.stringify({
+            featureRequest: feature,
+            useThinking: geminiMode === 'thinking',
+          }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error ?? 'Failed to generate ticket');
@@ -139,6 +144,46 @@ export default function CreateTicketForm({ onCreated }: Props) {
           </button>
         </div>
 
+        {/* Gemini Fast / Thinking toggle — only in AI mode */}
+        {mode === 'ai' && (
+          <div className="flex items-center gap-2 px-6 pt-3">
+            <span className="text-[11px] text-slate-500 font-semibold uppercase tracking-wider">
+              Gemini mode
+            </span>
+            <div className="flex rounded-lg overflow-hidden border border-slate-700/60">
+              <button
+                type="button"
+                onClick={() => setGeminiMode('fast')}
+                className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1 font-semibold transition-all ${
+                  geminiMode === 'fast'
+                    ? 'bg-amber-500/20 text-amber-300 border-r border-slate-700/60'
+                    : 'bg-slate-800 text-slate-500 hover:text-slate-300 border-r border-slate-700/60'
+                }`}
+              >
+                <Zap size={11} />
+                Fast
+              </button>
+              <button
+                type="button"
+                onClick={() => setGeminiMode('thinking')}
+                className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1 font-semibold transition-all ${
+                  geminiMode === 'thinking'
+                    ? 'bg-violet-500/20 text-violet-300'
+                    : 'bg-slate-800 text-slate-500 hover:text-slate-300'
+                }`}
+              >
+                <Brain size={11} />
+                Thinking
+              </button>
+            </div>
+            {geminiMode === 'thinking' && (
+              <span className="text-[10px] text-violet-400/70 italic">
+                slower · reasoning logged
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Form */}
         <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
           {mode === 'ai' ? (
@@ -209,11 +254,15 @@ export default function CreateTicketForm({ onCreated }: Props) {
               {loading ? (
                 <>
                   <Loader2 size={14} className="animate-spin" />
-                  {mode === 'ai' ? 'Generating plan…' : 'Creating…'}
+                  {mode === 'ai'
+                    ? geminiMode === 'thinking' ? 'Thinking…' : 'Generating plan…'
+                    : 'Creating…'}
                 </>
               ) : (
                 <>
-                  {mode === 'ai' ? <Sparkles size={14} /> : <Plus size={14} />}
+                  {mode === 'ai'
+                    ? geminiMode === 'thinking' ? <Brain size={14} /> : <Sparkles size={14} />
+                    : <Plus size={14} />}
                   {mode === 'ai' ? 'Generate with Gemini' : 'Create Ticket'}
                 </>
               )}

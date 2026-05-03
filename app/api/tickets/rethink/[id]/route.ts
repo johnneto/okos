@@ -31,11 +31,10 @@ export async function POST(
 
     // Use the ticket title as the feature request prompt so Gemini rewrites
     // the plan from scratch with fresh context
-    const newPlan = await generateTicketPlan(ticket.title, appContext);
+    const { plan } = await generateTicketPlan(ticket.title, appContext);
 
-    // Keep the existing title (Gemini may have produced a heading, but the
-    // ticket identity stays the same — only the body is replaced)
-    const updated = updateTicket(ticketId, ticket.title, newPlan);
+    // Keep the existing title — only the body is replaced
+    const updated = updateTicket(ticketId, ticket.title, plan);
 
     // Fire-and-forget Sheets sync
     syncTicket(updated).catch(e => console.warn('[Sheets sync]', e));

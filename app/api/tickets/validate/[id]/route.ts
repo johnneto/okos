@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { validateImplementation } from '@/lib/gemini';
 import { findTicket, appendToTicket, moveTicket } from '@/lib/tickets';
 import { syncTicket } from '@/lib/sheets';
+import { saveGeminiLog } from '@/lib/geminiLogs';
 import { execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
@@ -65,12 +66,32 @@ export async function POST(
       }
     }
 
+    const startedAt = new Date().toISOString();
+    const startMs = Date.now();
+
     // Validate with Gemini
-    const summary = await validateImplementation(
+    const { summary, thinking } = await validateImplementation(
       ticket.body,
       gitDiff,
       claudeReport ?? '(no report provided)'
     );
+
+    const completedAt = new Date().toISOString();
+
+    // Save Gemini validation log
+    const safeTs = startedAt.replace(/[:.]/g, '-');
+    saveGeminiLog({
+      logId: `${ticketId}_validate_${safeTs}`,
+      ticketId,
+      phase: 'validate',
+      model: 'gemini-2.5-flash',
+      useThinking: false,
+      thinking,
+      output: summary,
+      startedAt,
+      completedAt,
+      durationMs: Date.now() - startMs,
+    });
 
     // Append validation summary to the ticket file
     appendToTicket(ticketId, summary);
